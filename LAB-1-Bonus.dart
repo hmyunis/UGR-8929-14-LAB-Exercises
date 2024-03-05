@@ -1,61 +1,52 @@
 import 'dart:async';
 import 'dart:io';
 
-class Download {
-  final String url;
-  final String filename;
-  final String savePath;
+Future<void> downloadFile(String url, String savePath) async {
+  final HttpClient httpClient = HttpClient();
+  final HttpClientRequest request = await httpClient.getUrl(Uri.parse(url));
+  final HttpClientResponse response = await request.close();
+  final File file = File(savePath);
+  final IOSink sink = file.openWrite();
 
-  Download(this.url)
-      : filename = Uri.parse(url).pathSegments.last,
-        savePath = join(saveDir, filename);
+  int downloadedBytes = 0;
+  final int totalBytes = response.contentLength;
 
-  Future<void> download(String saveDir) async {
-    final httpClient = HttpClient();
-    try {
-      final request = await httpClient.getUrl(Uri.parse(url));
-      final response = await request.close();
-
-      if (response.statusCode == HttpStatus.ok) {
-        final contentLength = response.contentLength;
-        final file = File(savePath);
-        final sink = file.openWrite();
-
-        int downloaded = 0;
-        await for (final bytes in response.listen((data) {
-          downloaded += data.length;
-          print('Downloading $filename: ${(downloaded / contentLength) * 100}%');
-          sink.add(data);
-        }));
-
-        await sink.close();
-        print('Download complete: $filename');
-      } else {
-        print('Error downloading $filename: Status code ${response.statusCode}');
+  response.listen(
+    (List<int> data) {
+      sink.add(data);
+      downloadedBytes += data.length;
+      if (totalBytes != -1) {
+        double progress = downloadedBytes / totalBytes * 100;
+        print('Downloaded: ${progress.toStringAsFixed(2)}%');
       }
-    } catch (error) {
-      print('Error downloading $filename: $error');
-    } finally {
-      await httpClient.close();
-    }
-  }
+    },
+    onDone: () {
+      sink.close();
+      print('Download completed!');
+    },
+    onError: (error) {
+      print('Error during download: $error');
+      sink.close();
+    },
+    cancelOnError: true,
+  );
 }
 
-Future<void> downloadFiles(List<String> urls, String saveDir) async {
-  final downloads = urls.map((url) => Download(url));
-  final futures = downloads.map((download) => download.download(saveDir));
-  await Future.wait(futures);
-  print('All downloads finished.');
-}
+void main() {
+  List<String> urls = [
+    'https://via.placeholder.com/600/771796',
+    'https://via.placeholder.com/600/d32776',
+    'https://via.placeholder.com/600/56a8c2'
+  ];
+  List<String> savePaths = ['file1.png', 'file2.png', 'file3.png'];
 
-void main(List<String> arguments) async {
-  if (arguments.length < 3) {
-    print('Usage: dart download.dart <url1> <url2> ... <save_dir>');
-    return;
+  List<Future> downloadFutures = [];
+
+  for (int i = 0; i < urls.length; i++) {
+    downloadFutures.add(downloadFile(urls[i], savePaths[i]));
   }
 
-  final urls = arguments.sublist(0, arguments.length - 1);
-  final saveDir = arguments.last;
-
-  await downloadFiles(urls, saveDir);
+  Future.wait(downloadFutures)
+      .then((_) => print('All downloads completed successfully.'))
+      .catchError((error) => print('Error during downloads: $error'));
 }
